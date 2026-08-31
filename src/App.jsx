@@ -12,6 +12,15 @@ export default function App() {
   const [error, setError] = useState(null);
   const [adding, setAdding] = useState(false);
 
+  const navigateTo = (next) => {
+    const hash = `#/${encodeURIComponent(String(next))}`;
+    if (window.location.hash === hash) {
+      setActive(next);
+    } else {
+      window.location.hash = hash;
+    }
+  };
+
   // Load lists + tasks from Supabase on mount
   useEffect(() => {
     (async () => {
@@ -39,6 +48,25 @@ export default function App() {
       }
     })();
   }, []);
+
+  useEffect(() => {
+    const syncActiveFromHash = () => {
+      const candidate = decodeURIComponent(window.location.hash.replace(/^#\/?/, ""));
+      const next =
+        !candidate || candidate === "dashboard" || lists.some((item) => String(item.id) === candidate)
+          ? candidate || "dashboard"
+          : "dashboard";
+
+      if (next === "dashboard" && candidate && candidate !== "dashboard") {
+        window.history.replaceState(null, "", "#/dashboard");
+      }
+      setActive(next);
+    };
+
+    syncActiveFromHash();
+    window.addEventListener("hashchange", syncActiveFromHash);
+    return () => window.removeEventListener("hashchange", syncActiveFromHash);
+  }, [lists]);
 
   const tasksFor = (listId) => tasks.filter((t) => t.list_id === listId);
 
@@ -93,6 +121,7 @@ export default function App() {
 
   const removeTask = async (task) => {
     if (!supabase) return;
+    if (!window.confirm(`Delete "${task.text}"? This cannot be undone.`)) return;
     setTasks((ts) => ts.filter((t) => t.id !== task.id));
     try {
       const { error: deleteError } = await supabase.from("tasks").delete().eq("id", task.id);
@@ -110,7 +139,7 @@ export default function App() {
 
   if (loading) {
     return (
-      <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "system-ui, sans-serif", color: "#8A8577", background: "#F7F5F0" }}>
+      <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "system-ui, sans-serif", color: "#665F50", background: "#F7F5F0" }}>
         Loading your spread…
       </div>
     );
@@ -122,7 +151,7 @@ export default function App() {
       <aside className="app-sidebar" style={{ background: "#EDEAE2", borderRight: "1px solid #DCD8CC", display: "flex", flexDirection: "column", gap: 6 }}>
         <button
           className="sidebar-dashboard"
-          onClick={() => setActive("dashboard")}
+          onClick={() => navigateTo("dashboard")}
           title="Dashboard"
           style={{ borderRadius: 10, border: "none", background: active === "dashboard" ? "#2B2B28" : "transparent", color: active === "dashboard" ? "#F7F5F0" : "#2B2B28", cursor: "pointer", marginBottom: 10 }}
         >
@@ -135,7 +164,7 @@ export default function App() {
             <button
               className="sidebar-list-button"
               key={l.id}
-              onClick={() => setActive(l.id)}
+              onClick={() => navigateTo(l.id)}
               title={l.name}
               style={{ border: "none", cursor: "pointer", background: active === l.id ? l.tape : "transparent", borderLeft: `5px solid ${l.color}` }}
             >
@@ -175,12 +204,12 @@ export default function App() {
                 return (
                   <button
                     key={l.id}
-                    onClick={() => setActive(l.id)}
+                    onClick={() => navigateTo(l.id)}
                     style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: "#FFFFFF", border: "1px solid #E4E0D5", borderLeft: `6px solid ${l.color}`, borderRadius: 10, padding: "14px 18px", cursor: "pointer", textAlign: "left" }}
                   >
                     <div>
                       <div style={{ fontWeight: 700, fontSize: 15 }}>{l.name}</div>
-                      <div style={{ fontSize: 13, color: "#8A8577", marginTop: 2 }}>
+                      <div style={{ fontSize: 13, color: "#665F50", marginTop: 2 }}>
                         {open.length === 0
                           ? "All caught up"
                           : `${open.length} open · ${open.slice(0, 2).map((t) => t.text).join(", ")}${open.length > 2 ? "…" : ""}`}
