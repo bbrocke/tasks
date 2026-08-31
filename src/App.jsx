@@ -119,33 +119,39 @@ export default function App() {
   return (
     <div className="app-shell" style={{ fontFamily: "'Source Sans Pro', system-ui, sans-serif", background: "#F7F5F0", minHeight: "100vh", display: "flex", color: "#2B2B28" }}>
       {/* Tabbed spine sidebar */}
-      <div className="app-sidebar" style={{ width: 64, background: "#EDEAE2", borderRight: "1px solid #DCD8CC", display: "flex", flexDirection: "column", alignItems: "center", paddingTop: 20, gap: 6 }}>
+      <aside className="app-sidebar" style={{ background: "#EDEAE2", borderRight: "1px solid #DCD8CC", display: "flex", flexDirection: "column", gap: 6 }}>
         <button
+          className="sidebar-dashboard"
           onClick={() => setActive("dashboard")}
           title="Dashboard"
-          style={{ width: 44, height: 44, borderRadius: 10, border: "none", background: active === "dashboard" ? "#2B2B28" : "transparent", color: active === "dashboard" ? "#F7F5F0" : "#2B2B28", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", marginBottom: 10 }}
+          style={{ borderRadius: 10, border: "none", background: active === "dashboard" ? "#2B2B28" : "transparent", color: active === "dashboard" ? "#F7F5F0" : "#2B2B28", cursor: "pointer", marginBottom: 10 }}
         >
           <LayoutGrid size={18} />
+          <span className="sidebar-dashboard-label">Dashboard</span>
         </button>
         {lists.map((l) => {
           const count = tasksFor(l.id).filter((t) => !t.done).length;
           return (
             <button
+              className="sidebar-list-button"
               key={l.id}
               onClick={() => setActive(l.id)}
               title={l.name}
-              style={{ position: "relative", width: 44, height: 52, border: "none", cursor: "pointer", background: active === l.id ? l.tape : "transparent", borderRadius: "4px 12px 12px 4px", borderLeft: `5px solid ${l.color}`, marginLeft: active === l.id ? 0 : 4, transition: "all 0.15s ease" }}
+              style={{ border: "none", cursor: "pointer", background: active === l.id ? l.tape : "transparent", borderLeft: `5px solid ${l.color}` }}
             >
-              <span style={{ position: "absolute", top: 4, right: 4, fontSize: 10, fontWeight: 700, color: l.color }}>
+              <span className="sidebar-count" style={{ color: l.color }}>
                 {count > 0 ? count : ""}
               </span>
-              <span style={{ fontSize: 9, fontWeight: 700, color: "#2B2B28" }}>
+              <span className="sidebar-label" style={{ color: "#2B2B28" }}>
+                {l.name}
+              </span>
+              <span className="sidebar-label-compact" style={{ color: "#2B2B28" }}>
                 {l.name.split(" ")[0].slice(0, 4)}
               </span>
             </button>
           );
         })}
-      </div>
+      </aside>
 
       {/* Main content */}
       <main className="main-content" style={{ flex: 1, padding: "32px 40px", maxWidth: 720 }}>
