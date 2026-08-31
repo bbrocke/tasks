@@ -1,0 +1,78 @@
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+  margin: 0;
+}
+
+button,
+input {
+  font: inherit;
+}
+
+button:focus-visible,
+input:focus-visible {
+  outline: 2px solid #2b2b28;
+  outline-offset: 2px;
+}
+
+.app-shell {
+  width: 100%;
+}
+
+.app-sidebar {
+  flex: 0 0 64px;
+}
+
+.main-content {
+  width: 100%;
+  min-width: 0;
+}
+
+.task-form,
+.task-row {
+  min-width: 0;
+}
+
+.task-form input {
+  min-width: 0;
+}
+
+.task-row > span:nth-child(2) {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 600px) {
+  .main-content {
+    padding: 24px 16px !important;
+  }
+
+  .task-form {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) 40px 40px;
+  }
+
+  .task-row {
+    gap: 8px !important;
+  }
+
+  .task-row > button:last-child {
+    flex: 0 0 28px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+}

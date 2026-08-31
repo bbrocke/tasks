@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { Plus, Check, Repeat, X, LayoutGrid, ChevronRight, Flame } from "lucide-react";
-import { supabase } from "./supabase";
+import { supabase, supabaseConfigError } from "./supabase";
 
 export default function App() {
   const [lists, setLists] = useState([]);
@@ -10,74 +10,99 @@ export default function App() {
   const [draftRecur, setDraftRecur] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [adding, setAdding] = useState(false);
 
   // Load lists + tasks from Supabase on mount
   useEffect(() => {
     (async () => {
-      const [listsRes, tasksRes] = await Promise.all([
-        supabase.from("lists").select("*").order("sort_order"),
-        supabase.from("tasks").select("*").order("created_at"),
-      ]);
-      if (listsRes.error || tasksRes.error) {
-        setError("Couldn't load your tasks. Check your connection and refresh.");
-      } else {
-        setLists(listsRes.data);
-        setTasks(tasksRes.data);
+      if (supabaseConfigError) {
+        setError(`${supabaseConfigError} Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in Vercel, then redeploy.`);
+        setLoading(false);
+        return;
       }
-      setLoading(false);
+
+      try {
+        const [listsRes, tasksRes] = await Promise.all([
+          supabase.from("lists").select("*").order("sort_order"),
+          supabase.from("tasks").select("*").order("created_at"),
+        ]);
+        if (listsRes.error || tasksRes.error) {
+          setError("Couldn't load your tasks. Check your connection and refresh.");
+        } else {
+          setLists(listsRes.data ?? []);
+          setTasks(tasksRes.data ?? []);
+        }
+      } catch {
+        setError("Couldn't load your tasks. Check your connection and refresh.");
+      } finally {
+        setLoading(false);
+      }
     })();
   }, []);
 
   const tasksFor = (listId) => tasks.filter((t) => t.list_id === listId);
 
   const addTask = async (listId) => {
-    if (!draft.trim()) return;
+    const text = draft.trim();
+    if (!text || adding || !supabase) return;
     const newTask = {
       list_id: listId,
-      text: draft.trim(),
+      text,
       done: false,
       recur: draftRecur ? "custom" : null,
       streak: 0,
     };
+    const wasRecurring = draftRecur;
     setDraft("");
     setDraftRecur(false);
-    const { data, error } = await supabase.from("tasks").insert(newTask).select().single();
-    if (error) {
-      setError("Couldn't add that task. Try again.");
-    } else {
-      setTasks((t) => [...t, data]);
+    setAdding(true);
+    try {
+      const { data, error: insertError } = await supabase.from("tasks").insert(newTask).select().single();
+      if (insertError) throw insertError;
+      setTasks((current) => [...current, data]);
       setError(null);
+    } catch {
+      setDraft(text);
+      setDraftRecur(wasRecurring);
+      setError("Couldn't add that task. Try again.");
+    } finally {
+      setAdding(false);
     }
   };
 
   const toggleTask = async (task) => {
+    if (!supabase) return;
     const nowDone = !task.done;
     let streak = task.streak || 0;
     if (task.recur) streak = nowDone ? streak + 1 : Math.max(0, streak - 1);
 
     // Optimistic update, then persist
     setTasks((ts) => ts.map((t) => (t.id === task.id ? { ...t, done: nowDone, streak } : t)));
-    const { error } = await supabase
-      .from("tasks")
-      .update({ done: nowDone, streak })
-      .eq("id", task.id);
-    if (error) {
-      // Roll back
+    try {
+      const { error: updateError } = await supabase
+        .from("tasks")
+        .update({ done: nowDone, streak })
+        .eq("id", task.id);
+      if (updateError) throw updateError;
+      setError(null);
+    } catch {
       setTasks((ts) => ts.map((t) => (t.id === task.id ? task : t)));
       setError("Couldn't save that change. Try again.");
-    } else {
-      setError(null);
     }
   };
 
   const removeTask = async (task) => {
+    if (!supabase) return;
     setTasks((ts) => ts.filter((t) => t.id !== task.id));
-    const { error } = await supabase.from("tasks").delete().eq("id", task.id);
-    if (error) {
-      setTasks((ts) => [...ts, task]);
-      setError("Couldn't delete that task. Try again.");
-    } else {
+    try {
+      const { error: deleteError } = await supabase.from("tasks").delete().eq("id", task.id);
+      if (deleteError) throw deleteError;
       setError(null);
+    } catch {
+      setTasks((ts) =>
+        [...ts, task].sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
+      );
+      setError("Couldn't delete that task. Try again.");
     }
   };
 
@@ -92,9 +117,9 @@ export default function App() {
   }
 
   return (
-    <div style={{ fontFamily: "'Source Sans Pro', system-ui, sans-serif", background: "#F7F5F0", minHeight: "100vh", display: "flex", color: "#2B2B28" }}>
+    <div className="app-shell" style={{ fontFamily: "'Source Sans Pro', system-ui, sans-serif", background: "#F7F5F0", minHeight: "100vh", display: "flex", color: "#2B2B28" }}>
       {/* Tabbed spine sidebar */}
-      <div style={{ width: 64, background: "#EDEAE2", borderRight: "1px solid #DCD8CC", display: "flex", flexDirection: "column", alignItems: "center", paddingTop: 20, gap: 6 }}>
+      <div className="app-sidebar" style={{ width: 64, background: "#EDEAE2", borderRight: "1px solid #DCD8CC", display: "flex", flexDirection: "column", alignItems: "center", paddingTop: 20, gap: 6 }}>
         <button
           onClick={() => setActive("dashboard")}
           title="Dashboard"
@@ -123,7 +148,7 @@ export default function App() {
       </div>
 
       {/* Main content */}
-      <div style={{ flex: 1, padding: "32px 40px", maxWidth: 720 }}>
+      <main className="main-content" style={{ flex: 1, padding: "32px 40px", maxWidth: 720 }}>
         {error && (
           <div style={{ background: "#F7E3E0", color: "#A0453B", fontSize: 13, padding: "8px 12px", borderRadius: 8, marginBottom: 16 }}>
             {error}
@@ -179,8 +204,9 @@ export default function App() {
               {tasksFor(list.id).filter((t) => !t.done).length === 1 ? "" : "s"}
             </p>
 
-            <div style={{ display: "flex", gap: 8, marginBottom: 22 }}>
+            <div className="task-form" style={{ display: "flex", gap: 8, marginBottom: 22 }}>
               <input
+                aria-label={`Add a task to ${list.name}`}
                 value={draft}
                 onChange={(e) => setDraft(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && addTask(list.id)}
@@ -189,6 +215,8 @@ export default function App() {
               />
               <button
                 onClick={() => setDraftRecur((r) => !r)}
+                aria-pressed={draftRecur}
+                aria-label="Mark task as recurring"
                 title="Mark recurring"
                 style={{ width: 40, borderRadius: 8, border: "1px solid #DCD8CC", background: draftRecur ? list.tape : "#FFF", color: draftRecur ? list.color : "#B5AF9E", cursor: "pointer" }}
               >
@@ -196,7 +224,9 @@ export default function App() {
               </button>
               <button
                 onClick={() => addTask(list.id)}
-                style={{ width: 40, borderRadius: 8, border: "none", background: list.color, color: "#fff", cursor: "pointer" }}
+                aria-label="Add task"
+                disabled={!draft.trim() || adding}
+                style={{ width: 40, borderRadius: 8, border: "none", background: list.color, color: "#fff", cursor: !draft.trim() || adding ? "not-allowed" : "pointer", opacity: !draft.trim() || adding ? 0.55 : 1 }}
               >
                 <Plus size={18} style={{ margin: "auto" }} />
               </button>
@@ -209,9 +239,10 @@ export default function App() {
                 </div>
               )}
               {tasksFor(list.id).map((task) => (
-                <div key={task.id} style={{ display: "flex", alignItems: "center", gap: 10, background: "#FFFFFF", border: "1px solid #E4E0D5", borderRadius: 8, padding: "10px 12px", opacity: task.done ? 0.5 : 1 }}>
+                <div className="task-row" key={task.id} style={{ display: "flex", alignItems: "center", gap: 10, background: "#FFFFFF", border: "1px solid #E4E0D5", borderRadius: 8, padding: "10px 12px", opacity: task.done ? 0.5 : 1 }}>
                   <button
                     onClick={() => toggleTask(task)}
+                    aria-label={`${task.done ? "Mark incomplete" : "Mark complete"}: ${task.text}`}
                     style={{ width: 20, height: 20, borderRadius: 5, border: `2px solid ${list.color}`, background: task.done ? list.color : "transparent", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0 }}
                   >
                     {task.done && <Check size={12} color="#fff" />}
@@ -231,6 +262,7 @@ export default function App() {
                   )}
                   <button
                     onClick={() => removeTask(task)}
+                    aria-label={`Delete task: ${task.text}`}
                     style={{ border: "none", background: "transparent", color: "#C9C4B5", cursor: "pointer" }}
                   >
                     <X size={16} />
@@ -240,7 +272,7 @@ export default function App() {
             </div>
           </>
         ) : null}
-      </div>
+      </main>
     </div>
   );
 }
