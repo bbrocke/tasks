@@ -7,6 +7,7 @@ export default function AuthGate({ children }) {
   const [checking, setChecking] = useState(true);
   const [email, setEmail] = useState("");
   const [busy, setBusy] = useState(false);
+  const [googleBusy, setGoogleBusy] = useState(false);
   const [error, setError] = useState(null);
   const [sent, setSent] = useState(false);
   const busyRef = useRef(false);
@@ -27,7 +28,7 @@ export default function AuthGate({ children }) {
     let receivedAuthEvent = false;
     const callbackUrl = new URL(window.location.href);
     if (callbackUrl.searchParams.has("error")) {
-      setError("That sign-in link couldn't be used. Request a new link and open it in this browser.");
+      setError("Sign-in wasn't completed. Try Google again, or request a new email link and open it in this browser.");
       for (const key of ["error", "error_code", "error_description"]) callbackUrl.searchParams.delete(key);
       window.history.replaceState(null, "", `${callbackUrl.pathname}${callbackUrl.search}${callbackUrl.hash}`);
     }
@@ -89,6 +90,32 @@ export default function AuthGate({ children }) {
     }
   };
 
+  const signInWithGoogle = async () => {
+    if (!supabase || busyRef.current) return;
+    busyRef.current = true;
+    setBusy(true);
+    setGoogleBusy(true);
+    setError(null);
+    setSent(false);
+    try {
+      rememberList();
+      const { error: authError } = await supabase.auth.signInWithOAuth({
+        provider: "google",
+        options: {
+          redirectTo: `${window.location.origin}${window.location.pathname}`,
+          queryParams: { prompt: "select_account" },
+        },
+      });
+      if (authError) throw authError;
+    } catch {
+      setError("Couldn't start Google sign-in. Try again, or use an email link.");
+    } finally {
+      busyRef.current = false;
+      setBusy(false);
+      setGoogleBusy(false);
+    }
+  };
+
   const signOut = async () => {
     if (busyRef.current) return;
     busyRef.current = true;
@@ -124,12 +151,16 @@ export default function AuthGate({ children }) {
     <section className="auth-card" aria-labelledby="sign-in-heading">
       <p className="auth-eyebrow">YOUR EVERYDAY NOTEBOOK</p>
       <h1 id="sign-in-heading">Your lists, your space.</h1>
-      <p>Sign in with a link sent to your email. No password to remember.</p>
+      <p>Use Google or a link sent to your email. No password to remember.</p>
+      <button className="google-sign-in" type="button" onClick={signInWithGoogle} disabled={busy || !supabase}>
+        {googleBusy ? "Opening Google…" : "Continue with Google"}
+      </button>
+      <p className="auth-divider">Or sign in with email</p>
       <form onSubmit={sendLink} aria-busy={busy}>
         <label htmlFor="sign-in-email">Email address</label>
         <input id="sign-in-email" type="email" autoComplete="email" required value={email}
           onChange={(event) => setEmail(event.target.value)} disabled={busy || !supabase} />
-        <button type="submit" disabled={busy || !supabase}>{busy ? "Sending…" : "Send sign-in link"}</button>
+        <button type="submit" disabled={busy || !supabase}>{busy && !googleBusy ? "Sending…" : "Send sign-in link"}</button>
       </form>
       {sent && <p role="status">Check your inbox. Open the sign-in link in this browser to continue. If it has expired, request a new link.</p>}
       {error && <p role="alert">{error}</p>}
