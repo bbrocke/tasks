@@ -26,6 +26,53 @@ input:focus-visible {
   width: 100%;
 }
 
+.auth-page {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: #f7f5f0;
+  color: #2b2b28;
+  font-family: system-ui, sans-serif;
+}
+
+.auth-card {
+  max-width: 440px;
+  width: 100%;
+  padding: 32px;
+  border: 1px solid #dcd8cc;
+  border-radius: 12px;
+  background: white;
+}
+
+.auth-card h1 { font-family: Georgia, serif; font-size: 30px; }
+.auth-eyebrow { font-size: 11px; letter-spacing: 2px; }
+.auth-card p { line-height: 1.6; }
+.auth-card form { display: grid; gap: 12px; margin-top: 24px; }
+.auth-card input { min-width: 0; padding: 12px; border: 1px solid #dcd8cc; border-radius: 6px; }
+.auth-card button, .account-bar button {
+  min-height: 44px;
+  padding: 10px 16px;
+  border: 0;
+  border-radius: 6px;
+  background: #2b2b28;
+  color: #f7f5f0;
+  cursor: pointer;
+}
+.auth-card button:disabled, .account-bar button:disabled { opacity: .6; cursor: wait; }
+.auth-card [role="alert"], .account-bar [role="alert"] { color: #a0453b; }
+.account-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 12px 20px;
+  background: #edeae2;
+  font: 14px system-ui, sans-serif;
+}
+.account-bar span { overflow-wrap: anywhere; min-width: 0; }
+
 .app-sidebar {
   flex: 0 0 176px;
   width: 176px;

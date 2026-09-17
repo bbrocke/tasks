@@ -2,7 +2,7 @@
 import React, { StrictMode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
-import App from "./App";
+import { Planner } from "./App";
 import { supabase } from "./supabase";
 
 vi.mock("./supabase", () => ({
@@ -16,6 +16,8 @@ const lists = [
 ];
 const task = { id: 1, list_id: "work", text: "Read chapter", done: false, recur: "custom", streak: 0 };
 const secondTask = { ...task, id: 2, text: "Review notes", recur: null };
+const user = { id: "owner-id", email: "owner@example.test" };
+const App = () => <Planner user={user} />;
 let writes;
 
 function deferred() {
@@ -27,7 +29,7 @@ function deferred() {
 
 function mockDatabase({ listResult = Promise.resolve({ data: lists }), taskResult = Promise.resolve({ data: [task, secondTask] }) } = {}) {
   supabase.from.mockImplementation((table) => ({
-    select: () => ({ order: () => table === "lists" ? listResult : taskResult }),
+    select: () => ({ eq: () => ({ order: () => table === "lists" ? listResult : taskResult }) }),
     ...Object.fromEntries(["insert", "update", "delete"].map((operation) => [operation, (payload) => {
       const pending = deferred();
       const call = { operation, payload, ...pending };

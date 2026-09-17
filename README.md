@@ -4,7 +4,9 @@ A color-coded, multi-list to-do app with streaks for recurring tasks. Built with
 
 **Privacy:** The current database permits anonymous access to lists and tasks.
 See [the privacy review](docs/privacy-review.md) for verified findings and the
-authentication/ownership rollout needed before using this as a private planner.
+coordinated [private access rollout](docs/private-access-rollout.md) needed before
+using this as a private planner. This branch adds email-link sign-in and ownership
+policies; deploying the frontend does not automatically apply those policies.
 
 ## Setup
 
@@ -28,7 +30,7 @@ authentication/ownership rollout needed before using this as a private planner.
 ## Database
 
 The Supabase project (`todo-tracker`) has two tables:
-- `lists` — id, name, color, tape, sort_order
+- `lists` — id, name, color, tape, sort_order, owner_id (after the privacy migration)
 - `tasks` — id, list_id, text, done, recur, streak, created_at
 
 ## Verification
@@ -41,9 +43,11 @@ npm test
 npm run build
 ```
 
-Regression tests use a mocked Supabase client; they never write to the live database.
+UI regression tests use a mocked Supabase client; database policy tests run in
+local PGlite. Neither writes to the live database.
 They cover saved links, browser history, malformed routes, overlapping saves,
 rejected/zero-row writes, delete confirmation, and drafts across list navigation.
+They also check the authentication gate, session changes, and row ownership rules.
 
 Only one save per task runs at a time in a browser tab. Other tasks remain usable.
 Updates and deletes require a returned row before they count as successful.

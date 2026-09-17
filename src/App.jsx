@@ -1,8 +1,13 @@
 import React, { useState, useEffect, useRef } from "react";
 import { Plus, Check, Repeat, X, LayoutGrid, ChevronRight, Flame } from "lucide-react";
 import { supabase, supabaseConfigError } from "./supabase";
+import AuthGate from "./AuthGate";
 
 export default function App() {
+  return <AuthGate>{(user) => <Planner user={user} />}</AuthGate>;
+}
+
+export function Planner({ user }) {
   const [lists, setLists] = useState([]);
   const [tasks, setTasks] = useState([]);
   const [active, setActive] = useState("dashboard");
@@ -58,8 +63,8 @@ export default function App() {
 
       try {
         const [listsRes, tasksRes] = await Promise.all([
-          supabase.from("lists").select("*").order("sort_order"),
-          supabase.from("tasks").select("*").order("created_at"),
+          supabase.from("lists").select("*").eq("owner_id", user.id).order("sort_order"),
+          supabase.from("tasks").select("*, lists!inner(owner_id)").eq("lists.owner_id", user.id).order("created_at"),
         ]);
         if (cancelled) return;
         if (listsRes.error || tasksRes.error) {
@@ -76,7 +81,7 @@ export default function App() {
       }
     })();
     return () => { cancelled = true; };
-  }, []);
+  }, [user.id]);
 
   useEffect(() => {
     // A saved list link cannot be validated until the initial request succeeds.
@@ -238,6 +243,11 @@ export default function App() {
               One glance at every list, like your master overview page.
             </p>
             <div style={{ display: "grid", gap: 12 }}>
+              {listsLoaded && lists.length === 0 && <div>
+                <p>Your account is signed in, but no lists are linked to it yet.</p>
+                <p>If these are your existing lists, ask the app owner to finish linking your account.</p>
+                <button onClick={() => window.location.reload()}>Refresh lists</button>
+              </div>}
               {lists.map((l) => {
                 const open = tasksFor(l.id).filter((t) => !t.done);
                 const bestStreak = Math.max(0, ...tasksFor(l.id).map((t) => t.streak || 0));
