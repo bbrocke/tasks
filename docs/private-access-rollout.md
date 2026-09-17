@@ -1,10 +1,29 @@
 # Private access rollout
 
-This change contains the sign-in UI and tested ownership policies. **Merging the
-frontend alone does not secure the database.** Production migration and account
-assignment must be coordinated with deployment.
+## Activation record — September 17, 2026
 
-## Current prerequisite
+Production activation is complete. The owner chose and verified their email;
+PR #2 was merged and its production deployment succeeded. The migration was
+applied and legacy lists were assigned to that verified account. Pre/post content
+fingerprints matched for all existing lists and tasks (excluding the new owner
+column). No existing task content was changed.
+
+Live database tests passed for owner reads and task create/update/delete;
+verification writes were rolled back. Anonymous reads were denied and write
+grants removed. A different authenticated identity could not read, update, delete,
+insert into, or claim the owner's data. These tests used database roles and
+simulated JWT claims, not a second real account's API token. The owner separately
+confirmed successful email-link sign-in. All 51 automated tests and the build passed.
+
+The security advisor reported no table/RLS issues. Its remaining warning is
+[leaked-password protection disabled](https://supabase.com/docs/guides/auth/password-security#password-strength-and-leaked-password-protection);
+the app uses email links rather than password sign-in.
+
+The instructions below remain the procedure for a new environment. **Merging the
+frontend alone does not secure a database.** Coordinate the migration and account
+assignment with deployment.
+
+## Account prerequisite
 
 The September 17 review found no Supabase Auth accounts. The owner must choose an
 email address and verify it using the app's email link. Do not infer ownership
