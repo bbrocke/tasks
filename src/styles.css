@@ -61,6 +61,8 @@ input:focus-visible {
 }
 .auth-card button:disabled, .account-bar button:disabled { opacity: .6; cursor: wait; }
 .auth-card [role="alert"], .account-bar [role="alert"] { color: #a0453b; }
+.auth-card .google-sign-in { width: 100%; background: white; color: #292925; border: 1px solid #747775; }
+.auth-card .auth-divider { text-align: center; font-size: 14px; }
 .account-bar {
   display: flex;
   align-items: center;

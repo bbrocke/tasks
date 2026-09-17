@@ -10,7 +10,7 @@ vi.mock('./supabase', () => ({
   supabaseConfigError: null,
   supabase: {
     from: vi.fn(),
-    auth: { getSession: vi.fn(), onAuthStateChange: vi.fn(), signInWithOtp: vi.fn(), signOut: vi.fn() },
+    auth: { getSession: vi.fn(), onAuthStateChange: vi.fn(), signInWithOtp: vi.fn(), signInWithOAuth: vi.fn(), signOut: vi.fn() },
   },
 }));
 
@@ -37,6 +37,7 @@ beforeEach(() => {
   });
   supabase.auth.getSession.mockResolvedValue({ data: { session: null }, error: null });
   supabase.auth.signInWithOtp.mockResolvedValue({ error: null });
+  supabase.auth.signInWithOAuth.mockReset().mockResolvedValue({ data: { url: 'https://accounts.google.com' }, error: null });
   supabase.auth.signOut.mockResolvedValue({ error: null });
 });
 afterEach(cleanup);
@@ -170,7 +171,7 @@ it('shows a useful message for expired email callbacks without reflecting URL te
   window.history.replaceState(null, '', '/?error=access_denied&error_description=untrusted');
   render(<AuthGate>{() => <p>Private lists</p>}</AuthGate>);
   const alert = await screen.findByRole('alert');
-  expect(alert.textContent).toContain('Request a new link');
+  expect(alert.textContent).toContain('Try Google again');
   expect(alert.textContent).not.toContain('untrusted');
   expect(window.location.search).toBe('');
 });
@@ -200,4 +201,47 @@ it('filters reads by the signed-in user and ignores old account responses after 
   });
   expect(screen.queryByText('Alice private list')).toBeNull();
   expect(filters.slice(-2)).toEqual([['lists', 'owner_id', 'bob'], ['tasks', 'lists.owner_id', 'bob']]);
+});
+
+it('starts Google sign-in once, locks email requests, and remembers the list', async () => {
+  const pending = deferred();
+  supabase.auth.signInWithOAuth.mockReturnValue(pending.promise);
+  render(<AuthGate>{() => <p>Private lists</p>}</AuthGate>);
+  const button = await screen.findByRole('button', { name: 'Continue with Google' });
+  const input = screen.getByLabelText('Email address');
+  fireEvent.change(input, { target: { value: 'alice@example.test' } });
+  act(() => { fireEvent.click(button); fireEvent.click(button); fireEvent.submit(input.form); });
+  expect(supabase.auth.signInWithOAuth).toHaveBeenCalledTimes(1);
+  expect(supabase.auth.signInWithOAuth).toHaveBeenCalledWith({
+    provider: 'google',
+    options: { redirectTo: `${window.location.origin}/`, queryParams: { prompt: 'select_account' } },
+  });
+  expect(supabase.auth.signInWithOtp).not.toHaveBeenCalled();
+  expect(sessionStorage.getItem('tasks.returnTo')).toBe('#/work');
+  expect(button.disabled).toBe(true);
+  expect(input.disabled).toBe(true);
+  expect(screen.queryByText('Private lists')).toBeNull();
+  await act(async () => pending.resolve({ error: null }));
+});
+
+it.each(['returned', 'thrown'])('recovers from a %s Google error without exposing details', async (kind) => {
+  const error = new Error('Internal provider detail');
+  if (kind === 'returned') supabase.auth.signInWithOAuth.mockResolvedValue({ error });
+  else supabase.auth.signInWithOAuth.mockRejectedValue(error);
+  render(<AuthGate>{() => <p>Private lists</p>}</AuthGate>);
+  fireEvent.click(await screen.findByRole('button', { name: 'Continue with Google' }));
+  const alert = await screen.findByRole('alert');
+  expect(alert.textContent).toContain("Couldn't start Google sign-in");
+  expect(alert.textContent).not.toContain('Internal provider detail');
+  expect(screen.getByRole('button', { name: 'Continue with Google' }).disabled).toBe(false);
+  expect(screen.getByLabelText('Email address').disabled).toBe(false);
+  expect(screen.queryByText('Private lists')).toBeNull();
+});
+
+it('accepts a Google session through the existing private-account gate', async () => {
+  render(<AuthGate>{user => <p>Private lists for {user.id}</p>}</AuthGate>);
+  await screen.findByLabelText('Email address');
+  act(() => authChanged('SIGNED_IN', { ...alice, user: { ...alice.user, app_metadata: { provider: 'google' } } }));
+  expect(screen.getByText('Private lists for alice')).toBeTruthy();
+  expect(screen.queryByRole('button', { name: 'Continue with Google' })).toBeNull();
 });
