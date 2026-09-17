@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { supabase, supabaseConfigError } from "./supabase";
+import { signInErrorMessage } from "./signInError";
 
 export default function AuthGate({ children }) {
   const [session, setSession] = useState(null);
@@ -80,8 +81,8 @@ export default function AuthGate({ children }) {
       });
       if (authError) throw authError;
       setSent(true);
-    } catch {
-      setError("Couldn't send a sign-in link. Check your email address and try again in a minute.");
+    } catch (authError) {
+      setError(signInErrorMessage(authError));
     } finally {
       busyRef.current = false;
       setBusy(false);

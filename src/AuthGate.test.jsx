@@ -81,6 +81,23 @@ it('keeps email available for retry after a failed link request', async () => {
   expect(input.disabled).toBe(false);
 });
 
+it.each([
+  ['over_email_send_rate_limit', 'reached its sending limit'],
+  ['over_request_rate_limit', 'Wait at least a minute'],
+  ['email_address_not_authorized', 'not configured to send to this address'],
+  ['email_provider_disabled', 'Email sign-in is currently disabled'],
+])('explains the actual email failure (%s) without showing untrusted server text', async (code, expected) => {
+  supabase.auth.signInWithOtp.mockResolvedValue({ error: { code, message: 'Untrusted internal details' } });
+  render(<AuthGate>{() => <p>Private lists</p>}</AuthGate>);
+  const input = await screen.findByLabelText('Email address');
+  fireEvent.change(input, { target: { value: 'alice@example.test' } });
+  fireEvent.submit(input.form);
+  const alert = await screen.findByRole('alert');
+  expect(alert.textContent).toContain(expected);
+  expect(alert.textContent).not.toContain('Untrusted internal details');
+  expect(screen.queryByText('Private lists')).toBeNull();
+});
+
 it('opens the planner only after sign-in and restores the remembered list', async () => {
   render(<AuthGate>{(user) => <p>Private lists for {user.id}</p>}</AuthGate>);
   await screen.findByLabelText('Email address');
