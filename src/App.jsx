@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { Plus, Check, Repeat, X, LayoutGrid, ChevronRight, Flame } from "lucide-react";
 import { supabase, supabaseConfigError } from "./supabase";
 
@@ -6,16 +6,41 @@ export default function App() {
   const [lists, setLists] = useState([]);
   const [tasks, setTasks] = useState([]);
   const [active, setActive] = useState("dashboard");
-  const [draft, setDraft] = useState("");
-  const [draftRecur, setDraftRecur] = useState(false);
+  const [drafts, setDrafts] = useState({});
+  const draft = drafts[active]?.text ?? "";
+  const draftRecur = drafts[active]?.recur ?? false;
   const [loading, setLoading] = useState(true);
+  const [listsLoaded, setListsLoaded] = useState(false);
   const [error, setError] = useState(null);
   const [adding, setAdding] = useState(false);
+  const addingRef = useRef(false);
+  const pendingRef = useRef(new Set());
+  const [pendingTasks, setPendingTasks] = useState(new Set());
+
+  const updateDraft = (changes) => {
+    setDrafts((current) => ({
+      ...current,
+      [active]: { ...current[active], ...changes },
+    }));
+  };
+
+  // Ref locks take effect immediately, even before React renders disabled buttons.
+  const beginTaskSave = (id) => {
+    if (pendingRef.current.has(id)) return false;
+    pendingRef.current.add(id);
+    setPendingTasks(new Set(pendingRef.current));
+    setError(null);
+    return true;
+  };
+  const endTaskSave = (id) => {
+    pendingRef.current.delete(id);
+    setPendingTasks(new Set(pendingRef.current));
+  };
 
   const navigateTo = (next) => {
     const hash = `#/${encodeURIComponent(String(next))}`;
     if (window.location.hash === hash) {
-      setActive(next);
+      setActive(String(next));
     } else {
       window.location.hash = hash;
     }
@@ -23,6 +48,7 @@ export default function App() {
 
   // Load lists + tasks from Supabase on mount
   useEffect(() => {
+    let cancelled = false;
     (async () => {
       if (supabaseConfigError) {
         setError(`${supabaseConfigError} Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in Vercel, then redeploy.`);
@@ -35,23 +61,35 @@ export default function App() {
           supabase.from("lists").select("*").order("sort_order"),
           supabase.from("tasks").select("*").order("created_at"),
         ]);
+        if (cancelled) return;
         if (listsRes.error || tasksRes.error) {
           setError("Couldn't load your tasks. Check your connection and refresh.");
         } else {
           setLists(listsRes.data ?? []);
           setTasks(tasksRes.data ?? []);
+          setListsLoaded(true);
         }
       } catch {
-        setError("Couldn't load your tasks. Check your connection and refresh.");
+        if (!cancelled) setError("Couldn't load your tasks. Check your connection and refresh.");
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     })();
+    return () => { cancelled = true; };
   }, []);
 
   useEffect(() => {
+    // A saved list link cannot be validated until the initial request succeeds.
+    if (!listsLoaded) return;
     const syncActiveFromHash = () => {
-      const candidate = decodeURIComponent(window.location.hash.replace(/^#\/?/, ""));
+      let candidate;
+      try {
+        candidate = decodeURIComponent(window.location.hash.replace(/^#\/?/, ""));
+      } catch {
+        window.history.replaceState(null, "", "#/dashboard");
+        setActive("dashboard");
+        return;
+      }
       const next =
         !candidate || candidate === "dashboard" || lists.some((item) => String(item.id) === candidate)
           ? candidate || "dashboard"
@@ -66,13 +104,14 @@ export default function App() {
     syncActiveFromHash();
     window.addEventListener("hashchange", syncActiveFromHash);
     return () => window.removeEventListener("hashchange", syncActiveFromHash);
-  }, [lists]);
+  }, [lists, listsLoaded]);
 
   const tasksFor = (listId) => tasks.filter((t) => t.list_id === listId);
 
   const addTask = async (listId) => {
     const text = draft.trim();
-    if (!text || adding || !supabase) return;
+    if (!text || addingRef.current || !supabase) return;
+    addingRef.current = true;
     const newTask = {
       list_id: listId,
       text,
@@ -80,26 +119,23 @@ export default function App() {
       recur: draftRecur ? "custom" : null,
       streak: 0,
     };
-    const wasRecurring = draftRecur;
-    setDraft("");
-    setDraftRecur(false);
     setAdding(true);
+    setError(null);
     try {
       const { data, error: insertError } = await supabase.from("tasks").insert(newTask).select().single();
-      if (insertError) throw insertError;
+      if (insertError || !data) throw insertError ?? new Error("No task was returned");
       setTasks((current) => [...current, data]);
-      setError(null);
+      setDrafts((current) => ({ ...current, [listId]: { text: "", recur: false } }));
     } catch {
-      setDraft(text);
-      setDraftRecur(wasRecurring);
       setError("Couldn't add that task. Try again.");
     } finally {
+      addingRef.current = false;
       setAdding(false);
     }
   };
 
   const toggleTask = async (task) => {
-    if (!supabase) return;
+    if (!supabase || !beginTaskSave(task.id)) return;
     const nowDone = !task.done;
     let streak = task.streak || 0;
     if (task.recur) streak = nowDone ? streak + 1 : Math.max(0, streak - 1);
@@ -107,35 +143,39 @@ export default function App() {
     // Optimistic update, then persist
     setTasks((ts) => ts.map((t) => (t.id === task.id ? { ...t, done: nowDone, streak } : t)));
     try {
-      const { error: updateError } = await supabase
+      const { data, error: updateError } = await supabase
         .from("tasks")
         .update({ done: nowDone, streak })
-        .eq("id", task.id);
-      if (updateError) throw updateError;
-      setError(null);
+        .eq("id", task.id)
+        .select()
+        .single();
+      if (updateError || !data) throw updateError ?? new Error("No task was updated");
+      setTasks((ts) => ts.map((t) => (t.id === task.id ? data : t)));
     } catch {
       setTasks((ts) => ts.map((t) => (t.id === task.id ? task : t)));
       setError("Couldn't save that change. Try again.");
+    } finally {
+      endTaskSave(task.id);
     }
   };
 
   const removeTask = async (task) => {
-    if (!supabase) return;
+    if (!supabase || pendingRef.current.has(task.id)) return;
     if (!window.confirm(`Delete "${task.text}"? This cannot be undone.`)) return;
-    setTasks((ts) => ts.filter((t) => t.id !== task.id));
+    if (!beginTaskSave(task.id)) return;
     try {
-      const { error: deleteError } = await supabase.from("tasks").delete().eq("id", task.id);
-      if (deleteError) throw deleteError;
-      setError(null);
+      const { data, error: deleteError } = await supabase
+        .from("tasks").delete().eq("id", task.id).select("id").single();
+      if (deleteError || !data) throw deleteError ?? new Error("No task was deleted");
+      setTasks((ts) => ts.filter((t) => t.id !== task.id));
     } catch {
-      setTasks((ts) =>
-        [...ts, task].sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
-      );
       setError("Couldn't delete that task. Try again.");
+    } finally {
+      endTaskSave(task.id);
     }
   };
 
-  const list = lists.find((l) => l.id === active);
+  const list = lists.find((l) => String(l.id) === active);
 
   if (loading) {
     return (
@@ -166,7 +206,7 @@ export default function App() {
               key={l.id}
               onClick={() => navigateTo(l.id)}
               title={l.name}
-              style={{ border: "none", cursor: "pointer", background: active === l.id ? l.tape : "transparent", borderLeft: `5px solid ${l.color}` }}
+              style={{ border: "none", cursor: "pointer", background: active === String(l.id) ? l.tape : "transparent", borderLeft: `5px solid ${l.color}` }}
             >
               <span className="sidebar-count" style={{ color: l.color }}>
                 {count > 0 ? count : ""}
@@ -185,7 +225,7 @@ export default function App() {
       {/* Main content */}
       <main className="main-content" style={{ flex: 1, padding: "32px 40px", maxWidth: 720 }}>
         {error && (
-          <div style={{ background: "#F7E3E0", color: "#A0453B", fontSize: 13, padding: "8px 12px", borderRadius: 8, marginBottom: 16 }}>
+          <div role="alert" style={{ background: "#F7E3E0", color: "#A0453B", fontSize: 13, padding: "8px 12px", borderRadius: 8, marginBottom: 16 }}>
             {error}
           </div>
         )}
@@ -239,17 +279,19 @@ export default function App() {
               {tasksFor(list.id).filter((t) => !t.done).length === 1 ? "" : "s"}
             </p>
 
-            <div className="task-form" style={{ display: "flex", gap: 8, marginBottom: 22 }}>
+            <form className="task-form" onSubmit={(event) => { event.preventDefault(); addTask(list.id); }} aria-busy={adding} style={{ display: "flex", gap: 8, marginBottom: 22 }}>
               <input
                 aria-label={`Add a task to ${list.name}`}
                 value={draft}
-                onChange={(e) => setDraft(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && addTask(list.id)}
+                onChange={(e) => updateDraft({ text: e.target.value })}
+                disabled={adding}
                 placeholder="Add a task…"
                 style={{ flex: 1, padding: "10px 14px", borderRadius: 8, border: "1px solid #DCD8CC", fontSize: 14, outline: "none" }}
               />
               <button
-                onClick={() => setDraftRecur((r) => !r)}
+                type="button"
+                onClick={() => updateDraft({ recur: !draftRecur })}
+                disabled={adding}
                 aria-pressed={draftRecur}
                 aria-label="Mark task as recurring"
                 title="Mark recurring"
@@ -258,14 +300,14 @@ export default function App() {
                 <Repeat size={16} style={{ margin: "auto" }} />
               </button>
               <button
-                onClick={() => addTask(list.id)}
+                type="submit"
                 aria-label="Add task"
                 disabled={!draft.trim() || adding}
                 style={{ width: 40, borderRadius: 8, border: "none", background: list.color, color: "#fff", cursor: !draft.trim() || adding ? "not-allowed" : "pointer", opacity: !draft.trim() || adding ? 0.55 : 1 }}
               >
                 <Plus size={18} style={{ margin: "auto" }} />
               </button>
-            </div>
+            </form>
 
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               {tasksFor(list.id).length === 0 && (
@@ -274,9 +316,10 @@ export default function App() {
                 </div>
               )}
               {tasksFor(list.id).map((task) => (
-                <div className="task-row" key={task.id} style={{ display: "flex", alignItems: "center", gap: 10, background: "#FFFFFF", border: "1px solid #E4E0D5", borderRadius: 8, padding: "10px 12px", opacity: task.done ? 0.5 : 1 }}>
+                <div className="task-row" key={task.id} aria-busy={pendingTasks.has(task.id)} style={{ display: "flex", alignItems: "center", gap: 10, background: "#FFFFFF", border: "1px solid #E4E0D5", borderRadius: 8, padding: "10px 12px", opacity: task.done ? 0.5 : 1 }}>
                   <button
                     onClick={() => toggleTask(task)}
+                    disabled={pendingTasks.has(task.id)}
                     aria-label={`${task.done ? "Mark incomplete" : "Mark complete"}: ${task.text}`}
                     style={{ width: 20, height: 20, borderRadius: 5, border: `2px solid ${list.color}`, background: task.done ? list.color : "transparent", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0 }}
                   >
@@ -285,6 +328,7 @@ export default function App() {
                   <span style={{ flex: 1, fontSize: 14, textDecoration: task.done ? "line-through" : "none" }}>
                     {task.text}
                   </span>
+                  {pendingTasks.has(task.id) && <span role="status" style={{ fontSize: 12, color: "#665F50" }}>Saving…</span>}
                   {task.recur && (task.streak || 0) > 0 && (
                     <span title={`Streak: ${task.streak}`} style={{ display: "flex", alignItems: "center", gap: 2, fontSize: 12, fontWeight: 700, color: "#C6702B" }}>
                       <Flame size={13} /> {task.streak}
@@ -297,6 +341,7 @@ export default function App() {
                   )}
                   <button
                     onClick={() => removeTask(task)}
+                    disabled={pendingTasks.has(task.id)}
                     aria-label={`Delete task: ${task.text}`}
                     style={{ border: "none", background: "transparent", color: "#C9C4B5", cursor: "pointer" }}
                   >
