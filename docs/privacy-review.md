@@ -1,6 +1,9 @@
 # Privacy review — September 17, 2026
 
-Status: **the existing database access rules do not keep lists or tasks private.**
+Status: **resolved on September 17, 2026.** The findings below describe the
+pre-rollout database. Owner-only policies and anonymous grant revocation are now
+active; existing data was assigned to the explicitly chosen verified account.
+See [the rollout record](private-access-rollout.md).
 
 The repository's `.env.example` identifies the `todo-tracker` Supabase project.
 Read-only inspection of that project confirmed:
@@ -22,7 +25,7 @@ app's public Supabase connection. Write permissions were inspected, not exercise
 on production data. This review does not establish whether anyone has misused access.
 Live Vercel environment values and its browser bundle were not audited.
 
-## Required follow-up
+## Follow-up implemented
 
 Before treating this as a private planner, roll out authentication and ownership
 together:
@@ -38,8 +41,8 @@ together:
 5. Verify signed-out denial, owner access, and cross-account denial for every
    operation before deploying the coordinated app/database change.
 
-The navigation/save fix does not change production permissions. Revoking access
-alone would leave the current app unable to load or save tasks because it has no
-login flow. This remains a known issue requiring a separate coordinated rollout.
+The navigation/save fix (PR #1) did not change permissions. The subsequent private
+access rollout (PR #2) added sign-in, activated the policies, and completed verified
+ownership assignment. The original unrestricted policies have been removed.
 
 Reference: [Supabase row-level security](https://supabase.com/docs/guides/database/postgres/row-level-security).

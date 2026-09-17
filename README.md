@@ -2,11 +2,10 @@
 
 A color-coded, multi-list to-do app with streaks for recurring tasks. Built with React + Vite + Supabase.
 
-**Privacy:** The current database permits anonymous access to lists and tasks.
-See [the privacy review](docs/privacy-review.md) for verified findings and the
-coordinated [private access rollout](docs/private-access-rollout.md) needed before
-using this as a private planner. This branch adds email-link sign-in and ownership
-policies; deploying the frontend does not automatically apply those policies.
+**Privacy:** Email-link sign-in and owner-only access were activated on September
+17, 2026. Existing lists are assigned to their verified owner, and anonymous
+database access is denied. See the [rollout record](docs/private-access-rollout.md)
+for verification and setup requirements for a new environment.
 
 ## Setup
 
